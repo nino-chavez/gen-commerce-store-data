@@ -5,6 +5,9 @@ const log = createLogger('coupons');
 
 const PREFIXES = ['SAVE', 'DEAL', 'PROMO', 'SALE', 'OFF', 'SPRING', 'SUMMER', 'FALL', 'WELCOME', 'VIP'];
 
+/**
+ * Generate a platform-neutral coupon.
+ */
 function generateCoupon(opts = {}) {
   const discountType = opts.discountType || faker.helpers.arrayElement(['fixed_cart', 'percent']);
   const isPercent = discountType === 'percent';
@@ -17,22 +20,22 @@ function generateCoupon(opts = {}) {
 
   return {
     code: `${prefix}${suffix}`,
-    discount_type: discountType,
+    discountType,
     amount: String(amount),
     description: `Auto-generated ${isPercent ? 'percentage' : 'fixed'} discount coupon`,
-    individual_use: faker.datatype.boolean(0.3),
-    usage_limit: faker.datatype.boolean(0.5) ? faker.number.int({ min: 10, max: 500 }) : null,
-    usage_limit_per_user: faker.datatype.boolean(0.4) ? faker.number.int({ min: 1, max: 5 }) : null,
-    free_shipping: faker.datatype.boolean(0.15),
-    minimum_amount: faker.datatype.boolean(0.4) ? String(faker.number.int({ min: 25, max: 200 })) : '',
-    maximum_amount: faker.datatype.boolean(0.2) ? String(faker.number.int({ min: 200, max: 1000 })) : '',
-    date_expires: faker.datatype.boolean(0.5)
+    individualUse: faker.datatype.boolean(0.3),
+    usageLimit: faker.datatype.boolean(0.5) ? faker.number.int({ min: 10, max: 500 }) : null,
+    usageLimitPerUser: faker.datatype.boolean(0.4) ? faker.number.int({ min: 1, max: 5 }) : null,
+    freeShipping: faker.datatype.boolean(0.15),
+    minimumAmount: faker.datatype.boolean(0.4) ? String(faker.number.int({ min: 25, max: 200 })) : '',
+    maximumAmount: faker.datatype.boolean(0.2) ? String(faker.number.int({ min: 200, max: 1000 })) : '',
+    dateExpires: faker.datatype.boolean(0.5)
       ? faker.date.future({ years: 1 }).toISOString().split('T')[0]
       : null,
   };
 }
 
-export async function seedCoupons(client, amount = 10, opts = {}) {
+export async function seedCoupons(writer, amount = 10, opts = {}) {
   log.banner(`Seeding ${amount} coupon(s)`);
 
   const results = { created: 0, failed: 0, ids: [] };
@@ -40,12 +43,12 @@ export async function seedCoupons(client, amount = 10, opts = {}) {
   for (let i = 0; i < amount; i++) {
     try {
       const data = generateCoupon(opts);
-      const created = await client.post('coupons', data);
+      const created = await writer.writeCoupon(data);
       results.ids.push(created.id);
       results.created++;
 
-      const typeLabel = created.discount_type === 'percent' ? `${created.amount}%` : `$${created.amount}`;
-      log.success(`${created.code} — ${typeLabel} off [id: ${created.id}]`);
+      const typeLabel = data.discountType === 'percent' ? `${data.amount}%` : `$${data.amount}`;
+      log.success(`${data.code} -- ${typeLabel} off [id: ${created.id}]`);
     } catch (err) {
       results.failed++;
       log.error(`Coupon ${i + 1}: ${err.message}`);

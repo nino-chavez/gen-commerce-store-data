@@ -8,6 +8,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 loadDotenv({ path: resolve(__dirname, '..', '.env') });
 
 export function loadConfig(opts = {}) {
+  const platform = opts.platform || process.env.PLATFORM || 'wc';
+
+  if (platform === 'bc') {
+    return loadBCConfig(opts);
+  }
+  return loadWCConfig(opts);
+}
+
+function loadWCConfig(opts) {
   const url = opts.url || process.env.WC_URL;
   const consumerKey = opts.key || process.env.WC_CONSUMER_KEY;
   const consumerSecret = opts.secret || process.env.WC_CONSUMER_SECRET;
@@ -18,16 +27,36 @@ export function loadConfig(opts = {}) {
     if (!consumerKey) missing.push('WC_CONSUMER_KEY');
     if (!consumerSecret) missing.push('WC_CONSUMER_SECRET');
     throw new Error(
-      `Missing required config: ${missing.join(', ')}\n` +
-        'Set them as environment variables or in a .env file.\n' +
-        'See .env.example for reference.',
+      `Missing required WooCommerce config: ${missing.join(', ')}\n` +
+        'Set them as environment variables or in a .env file.',
     );
   }
 
   return {
+    platform: 'wc',
     url: url.replace(/\/$/, ''),
     consumerKey,
     consumerSecret,
-    wpCliSsh: opts.ssh || process.env.WP_CLI_SSH || null,
+  };
+}
+
+function loadBCConfig(opts) {
+  const storeHash = opts.storeHash || process.env.BC_STORE_HASH || process.env.BIGCOMMERCE_STORE_HASH;
+  const accessToken = opts.accessToken || process.env.BC_ACCESS_TOKEN || process.env.BIGCOMMERCE_ACCESS_TOKEN;
+
+  if (!storeHash || !accessToken) {
+    const missing = [];
+    if (!storeHash) missing.push('BC_STORE_HASH');
+    if (!accessToken) missing.push('BC_ACCESS_TOKEN');
+    throw new Error(
+      `Missing required BigCommerce config: ${missing.join(', ')}\n` +
+        'Set them as environment variables or in a .env file.',
+    );
+  }
+
+  return {
+    platform: 'bc',
+    storeHash,
+    accessToken,
   };
 }

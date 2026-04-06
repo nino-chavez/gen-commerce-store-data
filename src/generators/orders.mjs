@@ -24,10 +24,10 @@ function weightedStatus() {
 
 function generateAddress() {
   return {
-    first_name: faker.person.firstName(),
-    last_name: faker.person.lastName(),
-    address_1: faker.location.streetAddress(),
-    address_2: faker.datatype.boolean(0.2) ? faker.location.secondaryAddress() : '',
+    firstName: faker.person.firstName(),
+    lastName: faker.person.lastName(),
+    address1: faker.location.streetAddress(),
+    address2: faker.datatype.boolean(0.2) ? faker.location.secondaryAddress() : '',
     city: faker.location.city(),
     state: faker.location.state({ abbreviated: true }),
     postcode: faker.location.zipCode(),
@@ -42,40 +42,36 @@ function randomDate(start, end) {
   return new Date(s.getTime() + Math.random() * (e.getTime() - s.getTime()));
 }
 
-export async function seedOrders(client, amount = 20, opts = {}) {
+export async function seedOrders(writer, amount = 20, opts = {}) {
   const status = opts.status || null;
   log.banner(`Seeding ${amount} order(s)${status ? ` (status: ${status})` : ''}`);
 
-  // Fetch existing products and customers to reference
+  // Fetch existing products and customers via writer
   log.info('Fetching existing products...');
-  const products = await client.getAll('products', { status: 'publish', per_page: 100 });
+  const products = await writer.fetchProducts();
   if (products.length === 0) {
-    log.error('No products found. Seed products first: wc-seed products');
+    log.error('No products found. Seed products first.');
     return { created: 0, failed: 0, ids: [] };
   }
   log.info(`Found ${products.length} product(s) to sample from`);
 
   log.info('Fetching existing customers...');
-  const customers = await client.getAll('customers', { per_page: 100 });
+  const customers = await writer.fetchCustomers();
   log.info(`Found ${customers.length} customer(s) to sample from`);
 
   const results = { created: 0, failed: 0, ids: [] };
 
   for (let i = 0; i < amount; i++) {
     try {
-      // Pick 1-5 random products as line items
       const numItems = faker.number.int({ min: 1, max: 5 });
       const selectedProducts = faker.helpers.arrayElements(products, { min: 1, max: numItems });
 
       const lineItems = selectedProducts.map((p) => {
         const qty = faker.number.int({ min: 1, max: 4 });
-
-        // Handle variable products — pick a variation if available
         if (p.type === 'variable' && p.variations?.length > 0) {
-          return { variation_id: faker.helpers.arrayElement(p.variations), quantity: qty };
+          return { variationId: faker.helpers.arrayElement(p.variations), quantity: qty };
         }
-
-        return { product_id: p.id, quantity: qty };
+        return { productId: p.id, quantity: qty };
       });
 
       const billing = generateAddress();
@@ -83,38 +79,25 @@ export async function seedOrders(client, amount = 20, opts = {}) {
 
       const orderData = {
         status: status || weightedStatus(),
-        date_created: orderDate.toISOString(),
-        billing: { ...billing, email: faker.internet.email().toLowerCase() },
+        dateCreated: orderDate.toISOString(),
+        billing,
+        billingEmail: faker.internet.email().toLowerCase(),
         shipping: billing,
-        line_items: lineItems,
-        shipping_lines: [
-          {
-            method_id: 'flat_rate',
-            method_title: 'Flat Rate',
-            total: faker.commerce.price({ min: 0, max: 25, dec: 2 }),
-          },
-        ],
+        lineItems,
+        shippingTotal: faker.commerce.price({ min: 0, max: 25, dec: 2 }),
+        customerId: customers.length > 0
+          ? faker.helpers.arrayElement(customers).id
+          : null,
+        feeLines: faker.datatype.boolean(0.2) ? [{
+          name: faker.helpers.arrayElement(['Handling Fee', 'Rush Processing', 'Gift Wrap']),
+          total: faker.commerce.price({ min: 1, max: 15, dec: 2 }),
+        }] : [],
       };
 
-      // Assign a customer if any exist
-      if (customers.length > 0) {
-        orderData.customer_id = faker.helpers.arrayElement(customers).id;
-      }
-
-      // Optionally add a fee (20% chance)
-      if (faker.datatype.boolean(0.2)) {
-        orderData.fee_lines = [
-          {
-            name: faker.helpers.arrayElement(['Handling Fee', 'Rush Processing', 'Gift Wrap']),
-            total: faker.commerce.price({ min: 1, max: 15, dec: 2 }),
-          },
-        ];
-      }
-
-      const created = await client.post('orders', orderData);
+      const created = await writer.writeOrder(orderData);
       results.ids.push(created.id);
       results.created++;
-      log.success(`Order #${created.number} — ${created.status} — $${created.total} (${lineItems.length} items) [id: ${created.id}]`);
+      log.success(`Order #${created.id} -- ${orderData.status} (${lineItems.length} items)`);
     } catch (err) {
       results.failed++;
       log.error(`Order ${i + 1}: ${err.message}`);
