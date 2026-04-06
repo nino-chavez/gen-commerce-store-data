@@ -1,0 +1,182 @@
+{
+  "_comment": "Negative/edge-case shipping test zones — ported from dms-self-serve seed-woo-shipping-negative.php (DMS-6309)",
+  "zones": [
+    {
+      "name": "NEG: Carrier Only (USPS+FedEx)",
+      "order": 20,
+      "locations": [{ "code": "US", "type": "country" }],
+      "methods": [
+        { "method_id": "usps", "title": "USPS Priority Mail", "carrier": true },
+        { "method_id": "fedex", "title": "FedEx Ground", "carrier": true }
+      ],
+      "expected": "Zone created, 0 methods (both skipped)"
+    },
+    {
+      "name": "NEG: Carrier Mixed (UPS + Flat Rate)",
+      "order": 21,
+      "locations": [
+        { "code": "US:CA", "type": "state" },
+        { "code": "US:NV", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "ups", "title": "UPS Ground", "carrier": true },
+        { "method_id": "flat_rate", "settings": { "cost": "9.99", "title": "Standard Flat Rate" } },
+        { "method_id": "canadapost", "title": "Canada Post Xpresspost", "enabled": false, "carrier": true }
+      ],
+      "expected": "1 method migrated, carriers skipped"
+    },
+    {
+      "name": "NEG: Multi-Carrier Intl",
+      "order": 22,
+      "locations": [
+        { "code": "GB", "type": "country" },
+        { "code": "AU", "type": "country" }
+      ],
+      "methods": [
+        { "method_id": "dhl_express", "title": "DHL Express Worldwide", "carrier": true },
+        { "method_id": "royal_mail", "title": "Royal Mail Tracked 48", "carrier": true },
+        { "method_id": "auspost", "title": "Australia Post eParcel", "carrier": true }
+      ],
+      "expected": "Zone created, 0 methods (all skipped)"
+    },
+    {
+      "name": "NEG: Formula-Based Costs",
+      "order": 23,
+      "locations": [
+        { "code": "US:TX", "type": "state" },
+        { "code": "US:OK", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "[qty] * 2", "title": "Per-Item Rate ($2/item)" } },
+        { "method_id": "flat_rate", "settings": { "cost": "[fee percent=\"10\" min_fee=\"5\"]", "title": "10% Handling Fee (min $5)" } },
+        { "method_id": "flat_rate", "settings": { "cost": "10 + [qty] * 1.50", "title": "Base + Per-Item ($10 + $1.50/item)" } },
+        { "method_id": "flat_rate", "settings": { "cost": "[cost]", "title": "Cart Total Mirror" } },
+        { "method_id": "flat_rate", "settings": { "cost": "7.50", "title": "Static Fallback Rate" } }
+      ],
+      "expected": "1 static method migrated, 4 formulas dropped"
+    },
+    {
+      "name": "NEG: All Formula Methods",
+      "order": 24,
+      "locations": [{ "code": "US:WA", "type": "state" }],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "[qty] * 5", "title": "Quantity-Based Only" } },
+        { "method_id": "flat_rate", "settings": { "cost": "[cost] * 0.15", "title": "Cost-Based Surcharge" } },
+        { "method_id": "flat_rate", "settings": { "cost": "[fee percent=\"8\" min_fee=\"3\" max_fee=\"25\"]", "title": "Capped Percentage Fee" } }
+      ],
+      "expected": "Zone created, 0 methods (all dropped)"
+    },
+    {
+      "name": "NEG: Orphan Postcodes Only",
+      "order": 25,
+      "locations": [
+        { "code": "SW1A 1AA", "type": "postcode" },
+        { "code": "2000", "type": "postcode" },
+        { "code": "M5V 3L9", "type": "postcode" },
+        { "code": "90210...90220", "type": "postcode" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "12.00", "title": "Orphan Zone Shipping" } }
+      ],
+      "expected": "Postcodes dropped (no country context), method migrates"
+    },
+    {
+      "name": "NEG: Postcodes With Country Sibling",
+      "order": 26,
+      "locations": [
+        { "code": "US", "type": "country" },
+        { "code": "100*", "type": "postcode" },
+        { "code": "200*", "type": "postcode" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "6.00", "title": "NYC/DC Metro Shipping" } }
+      ],
+      "expected": "Happy path — postcodes resolve via US sibling"
+    },
+    {
+      "name": "NEG: All Methods Disabled",
+      "order": 27,
+      "locations": [
+        { "code": "US:OH", "type": "state" },
+        { "code": "US:PA", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "10.00", "title": "Disabled Ground" }, "enabled": false },
+        { "method_id": "flat_rate", "settings": { "cost": "25.00", "title": "Disabled Express" }, "enabled": false },
+        { "method_id": "free_shipping", "settings": { "min_amount": "100.00", "title": "Disabled Free", "requires": "min_amount" }, "enabled": false }
+      ],
+      "expected": "Entire zone excluded from migration"
+    },
+    {
+      "name": "NEG: Mixed Enabled/Disabled",
+      "order": 28,
+      "locations": [
+        { "code": "US:GA", "type": "state" },
+        { "code": "US:SC", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "8.00", "title": "Active Ground" }, "enabled": true },
+        { "method_id": "flat_rate", "settings": { "cost": "19.99", "title": "Retired Express" }, "enabled": false },
+        { "method_id": "local_pickup", "settings": { "cost": "0.00", "title": "Suspended Pickup" }, "enabled": false },
+        { "method_id": "free_shipping", "settings": { "min_amount": "50.00", "title": "Active Free", "requires": "min_amount" }, "enabled": true }
+      ],
+      "expected": "2 enabled methods migrate, 2 disabled excluded"
+    },
+    {
+      "name": "NEG: Shipping Class Overrides",
+      "order": 29,
+      "locations": [
+        { "code": "US:MI", "type": "state" },
+        { "code": "US:IN", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "10.00", "title": "Standard (with class overrides)" }, "class_costs": true },
+        { "method_id": "flat_rate", "settings": { "cost": "10.00", "title": "Standard (no classes)" } }
+      ],
+      "expected": "Base cost migrates, per-class overrides lost"
+    },
+    {
+      "name": "NEG: Kitchen Sink (all skip types)",
+      "order": 30,
+      "locations": [{ "code": "US:AZ", "type": "state" }],
+      "methods": [
+        { "method_id": "usps", "title": "USPS Priority", "carrier": true },
+        { "method_id": "flat_rate", "settings": { "cost": "[qty] * 3", "title": "Per-Qty Formula" } },
+        { "method_id": "flat_rate", "settings": { "cost": "15.00", "title": "Disabled Static" }, "enabled": false },
+        { "method_id": "flat_rate", "settings": { "cost": "12.00", "title": "Only Survivor" } }
+      ],
+      "expected": "1 survivor out of 4 (carrier+formula+disabled+static)"
+    },
+    {
+      "name": "NEG: Empty Zone (no methods)",
+      "order": 31,
+      "locations": [{ "code": "US:HI", "type": "state" }],
+      "methods": [],
+      "expected": "Zone with locations but zero methods"
+    },
+    {
+      "name": "NEG: Free Shipping Requires Variants",
+      "order": 32,
+      "locations": [
+        { "code": "US:CO", "type": "state" },
+        { "code": "US:UT", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "free_shipping", "settings": { "title": "Coupon-Only Free Ship", "requires": "coupon" } },
+        { "method_id": "free_shipping", "settings": { "min_amount": "100.00", "title": "Coupon + $100 Min Free Ship", "requires": "both" } },
+        { "method_id": "free_shipping", "settings": { "min_amount": "75.00", "title": "Coupon OR $75 Free Ship", "requires": "either" } },
+        { "method_id": "free_shipping", "settings": { "min_amount": "50.00", "title": "Standard $50 Min Free Ship", "requires": "min_amount" } }
+      ],
+      "expected": "coupon/both/either skipped; only min_amount maps"
+    }
+  ],
+  "zone_0_methods": [
+    { "method_id": "flat_rate", "settings": { "cost": "45.00", "title": "RoW Standard" } },
+    { "method_id": "flat_rate", "settings": { "cost": "89.99", "title": "RoW Express" } }
+  ],
+  "shipping_classes": [
+    { "name": "Bulky Items", "slug": "bulky-items", "description": "Large or heavy items requiring special handling" },
+    { "name": "Fragile", "slug": "fragile", "description": "Items requiring careful packaging" },
+    { "name": "Digital", "slug": "digital", "description": "Downloadable or virtual items (no shipping)" }
+  ]
+}

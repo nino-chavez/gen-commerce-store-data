@@ -1,0 +1,95 @@
+{
+  "_comment": "Positive shipping test zones — ported from dms-self-serve seed-woo-shipping.mjs",
+  "zones": [
+    {
+      "name": "NA Mixed Test",
+      "order": 1,
+      "locations": [
+        { "code": "US", "type": "country" },
+        { "code": "US:CA", "type": "state" },
+        { "code": "CA:ON", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "20.00", "title": "Standard Shipping" } }
+      ]
+    },
+    {
+      "name": "US Zip Codes",
+      "order": 2,
+      "locations": [
+        { "code": "90210", "type": "postcode" },
+        { "code": "303*", "type": "postcode" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "5.00", "title": "Flat Rate Shipping" } },
+        { "method_id": "local_pickup", "settings": { "cost": "0.00", "title": "Local Pickup" } }
+      ]
+    },
+    {
+      "name": "UK/EU Free Ship",
+      "order": 3,
+      "locations": [
+        { "code": "GB", "type": "country" },
+        { "code": "FR", "type": "country" }
+      ],
+      "methods": [
+        { "method_id": "free_shipping", "settings": { "min_amount": "150.00", "title": "Free Shipping (Orders $150+)" } }
+      ]
+    },
+    {
+      "name": "US Domestic Standard",
+      "order": 4,
+      "locations": [
+        { "code": "US:NY", "type": "state" },
+        { "code": "US:TX", "type": "state" },
+        { "code": "US:FL", "type": "state" },
+        { "code": "US:IL", "type": "state" },
+        { "code": "US:WA", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "8.99", "title": "Ground Shipping" } },
+        { "method_id": "flat_rate", "settings": { "cost": "24.99", "title": "Express Shipping" } },
+        { "method_id": "free_shipping", "settings": { "min_amount": "75.00", "title": "Free Shipping ($75+)" } },
+        { "method_id": "local_pickup", "settings": { "cost": "0.00", "title": "In-Store Pickup" } }
+      ]
+    },
+    {
+      "name": "International Shipping",
+      "order": 5,
+      "locations": [
+        { "code": "DE", "type": "country" },
+        { "code": "AU", "type": "country" },
+        { "code": "JP", "type": "country" },
+        { "code": "MX", "type": "country" },
+        { "code": "BR", "type": "country" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "35.00", "title": "International Standard" } }
+      ]
+    },
+    {
+      "name": "Europe Wide",
+      "order": 6,
+      "locations": [
+        { "code": "EU", "type": "continent" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "15.00", "title": "EU Standard" } },
+        { "method_id": "free_shipping", "settings": { "min_amount": "200.00", "title": "Free EU Shipping ($200+)" } }
+      ]
+    },
+    {
+      "name": "Canada Targeted",
+      "order": 7,
+      "locations": [
+        { "code": "CA:BC", "type": "state" },
+        { "code": "CA:ON", "type": "state" },
+        { "code": "CA:QC", "type": "state" }
+      ],
+      "methods": [
+        { "method_id": "flat_rate", "settings": { "cost": "12.50", "title": "Canada Standard" } },
+        { "method_id": "flat_rate", "settings": { "cost": "29.99", "title": "Canada Express" } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "wc-seed-toolkit",
+  "version": "1.0.0",
+  "description": "WooCommerce test data seeder for the DMS team — generates products, customers, orders, coupons, shipping zones, and tax rates",
+  "type": "module",
+  "bin": {
+    "wc-seed": "./bin/wc-seed"
+  },
+  "scripts": {
+    "start": "node bin/wc-seed",
+    "seed:all": "node bin/wc-seed all",
+    "seed:products": "node bin/wc-seed products",
+    "seed:customers": "node bin/wc-seed customers",
+    "seed:orders": "node bin/wc-seed orders",
+    "seed:coupons": "node bin/wc-seed coupons",
+    "seed:shipping": "node bin/wc-seed shipping",
+    "seed:tax-rates": "node bin/wc-seed tax-rates"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^9.0.0",
+    "bottleneck": "^2.19.5",
+    "commander": "^13.0.0",
+    "dotenv": "^16.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
