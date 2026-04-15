@@ -10,9 +10,8 @@ loadDotenv({ path: resolve(__dirname, '..', '.env') });
 export function loadConfig(opts = {}) {
   const platform = opts.platform || process.env.PLATFORM || 'wc';
 
-  if (platform === 'bc') {
-    return loadBCConfig(opts);
-  }
+  if (platform === 'bc') return loadBCConfig(opts);
+  if (platform === 'shopify') return loadShopifyConfig(opts);
   return loadWCConfig(opts);
 }
 
@@ -57,6 +56,27 @@ function loadBCConfig(opts) {
   return {
     platform: 'bc',
     storeHash,
+    accessToken,
+  };
+}
+
+function loadShopifyConfig(opts) {
+  const storeUrl = opts.storeUrl || process.env.SHOPIFY_STORE_URL;
+  const accessToken = opts.accessToken || process.env.SHOPIFY_ACCESS_TOKEN;
+
+  if (!storeUrl || !accessToken) {
+    const missing = [];
+    if (!storeUrl) missing.push('SHOPIFY_STORE_URL');
+    if (!accessToken) missing.push('SHOPIFY_ACCESS_TOKEN');
+    throw new Error(
+      `Missing required Shopify config: ${missing.join(', ')}\n` +
+        'Set them as environment variables or in a .env file. Run `seed auth` to obtain an access token.',
+    );
+  }
+
+  return {
+    platform: 'shopify',
+    storeUrl: storeUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''),
     accessToken,
   };
 }

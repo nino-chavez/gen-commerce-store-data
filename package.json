@@ -1,21 +1,22 @@
 {
-  "name": "@signalx/seed-toolkit",
-  "version": "2.0.0",
-  "description": "Multi-platform e-commerce test data seeder — generates products, customers, orders, and coupons for WooCommerce and BigCommerce",
+  "name": "@signalx/gen-commerce-store-data",
+  "version": "3.0.0",
+  "description": "Multi-platform e-commerce test data seeder — generates products, customers, orders, coupons, and content for WooCommerce, BigCommerce, and Shopify",
   "type": "module",
   "bin": {
-    "seed": "./bin/seed",
-    "wc-seed": "./bin/wc-seed"
+    "seed": "./bin/seed"
   },
   "scripts": {
     "start": "node bin/seed",
+    "auth": "node bin/seed auth",
     "seed:all": "node bin/seed all",
     "seed:products": "node bin/seed products",
     "seed:customers": "node bin/seed customers",
     "seed:orders": "node bin/seed orders",
     "seed:coupons": "node bin/seed coupons",
     "seed:shipping": "node bin/seed shipping",
-    "seed:tax-rates": "node bin/seed tax-rates"
+    "seed:tax-rates": "node bin/seed tax-rates",
+    "seed:content": "node bin/seed content"
   },
   "dependencies": {
     "@faker-js/faker": "^9.0.0",

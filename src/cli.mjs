@@ -2,8 +2,10 @@ import { program } from 'commander';
 import { loadConfig } from './config.mjs';
 import { WCClient } from './clients/wc-client.mjs';
 import { BCClient } from './clients/bc-client.mjs';
+import { ShopifyClient } from './clients/shopify-client.mjs';
 import { WCWriter } from './writers/wc-writer.mjs';
 import { BCWriter } from './writers/bc-writer.mjs';
+import { ShopifyWriter } from './writers/shopify-writer.mjs';
 import { createLogger } from './logger.mjs';
 import { loadPreset, listPresets } from './presets/index.mjs';
 import { seedProducts } from './generators/products.mjs';
@@ -12,6 +14,8 @@ import { seedOrders } from './generators/orders.mjs';
 import { seedCoupons } from './generators/coupons.mjs';
 import { seedShipping } from './generators/shipping.mjs';
 import { seedTaxRates } from './generators/tax-rates.mjs';
+import { seedContent } from './generators/content.mjs';
+import { authenticate } from './auth.mjs';
 
 const log = createLogger('seed');
 
@@ -24,8 +28,14 @@ function createWriter(opts) {
     return { writer: new BCWriter(client), platform: 'bc', client };
   }
 
+  if (config.platform === 'shopify') {
+    const client = new ShopifyClient(config);
+    log.info(`Target: Shopify store ${config.storeUrl}`);
+    return { writer: new ShopifyWriter(client), platform: 'shopify', client };
+  }
+
   const client = new WCClient(config);
-  log.info(`Target: ${config.url}`);
+  log.info(`Target: WooCommerce ${config.url}`);
   return { writer: new WCWriter(client), platform: 'wc', client };
 }
 
@@ -42,15 +52,40 @@ async function withWriter(opts, fn) {
 // Global options
 program
   .name('seed')
-  .description('Multi-platform e-commerce test data seeder')
-  .version('2.0.0')
-  .option('-p, --platform <platform>', 'Platform: wc or bc', 'wc')
+  .description('Multi-platform e-commerce test data seeder (WooCommerce, BigCommerce, Shopify)')
+  .version('3.0.0')
+  .option('-p, --platform <platform>', 'Platform: wc, bc, or shopify', 'wc')
   .option('--preset <preset>', `Store preset: ${listPresets().join(', ')}`)
   .option('--url <url>', 'WooCommerce store URL')
   .option('--key <key>', 'WC consumer key')
   .option('--secret <secret>', 'WC consumer secret')
   .option('--store-hash <hash>', 'BigCommerce store hash')
-  .option('--access-token <token>', 'BigCommerce access token');
+  .option('--store-url <url>', 'Shopify store URL (e.g. my-store.myshopify.com)')
+  .option('--access-token <token>', 'BigCommerce or Shopify access token');
+
+// Auth (Shopify-only)
+program
+  .command('auth')
+  .description('Run Shopify OAuth flow and save access token to .env (Shopify only)')
+  .action(async () => {
+    const storeUrl = process.env.SHOPIFY_STORE_URL;
+    const clientId = process.env.SHOPIFY_CLIENT_ID;
+    const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
+
+    if (!storeUrl || !clientId || !clientSecret) {
+      log.error('Missing required env vars for auth:');
+      log.error('  SHOPIFY_STORE_URL, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET');
+      log.error('Add them to your .env file first.');
+      process.exit(1);
+    }
+
+    try {
+      await authenticate(storeUrl, clientId, clientSecret);
+    } catch (err) {
+      log.error(err.message);
+      process.exit(1);
+    }
+  });
 
 // Products
 program
@@ -121,7 +156,7 @@ program
   .option('-n, --negative', 'Seed negative/edge-case zones')
   .action(async (opts, cmd) => {
     const globals = cmd.optsWithGlobals();
-    if (globals.platform === 'bc') {
+    if (globals.platform !== 'wc') {
       log.error('Shipping zone seeding is only supported for WooCommerce.');
       process.exit(1);
     }
@@ -137,7 +172,7 @@ program
   .option('--clean', 'Delete existing tax rates before importing')
   .action(async (opts, cmd) => {
     const globals = cmd.optsWithGlobals();
-    if (globals.platform === 'bc') {
+    if (globals.platform !== 'wc') {
       log.error('Tax rate seeding is only supported for WooCommerce.');
       process.exit(1);
     }
@@ -146,16 +181,39 @@ program
     );
   });
 
+// Content: pages + blog posts (Shopify-only)
+program
+  .command('content')
+  .description('Seed pages and blog posts (Shopify only)')
+  .option('--pages <n>', 'Number of pages to create', '5')
+  .option('--blog-posts <n>', 'Number of blog posts to create', '10')
+  .action(async (opts, cmd) => {
+    const globals = cmd.optsWithGlobals();
+    if (globals.platform !== 'shopify') {
+      log.error('Content seeding (pages + blog posts) is only supported for Shopify.');
+      process.exit(1);
+    }
+    await withWriter(globals, (_writer, _platform, client) =>
+      seedContent(client, {
+        pages: parseInt(opts.pages),
+        blogPosts: parseInt(opts.blogPosts),
+      }),
+    );
+  });
+
 // All
 program
   .command('all')
-  .description('Seed everything: products, customers, orders, coupons (+ shipping/tax for WC)')
+  .description('Seed everything: products, customers, orders, coupons (+ shipping/tax for WC, + content for Shopify)')
   .option('--products <n>', 'Number of products', '30')
   .option('--customers <n>', 'Number of customers', '15')
   .option('--orders <n>', 'Number of orders', '50')
   .option('--coupons <n>', 'Number of coupons', '10')
-  .option('--skip-shipping', 'Skip shipping zones')
-  .option('--skip-tax', 'Skip tax rates')
+  .option('--pages <n>', 'Number of pages (Shopify)', '5')
+  .option('--blog-posts <n>', 'Number of blog posts (Shopify)', '10')
+  .option('--skip-shipping', 'Skip shipping zones (WC)')
+  .option('--skip-tax', 'Skip tax rates (WC)')
+  .option('--skip-content', 'Skip pages + blog posts (Shopify)')
   .action(async (opts, cmd) => {
     const globals = cmd.optsWithGlobals();
     await withWriter(globals, async (writer, platform, client) => {
@@ -165,16 +223,21 @@ program
       await seedCoupons(writer, parseInt(opts.coupons));
       await seedOrders(writer, parseInt(opts.orders));
 
-      // WC-specific seeders
       if (platform === 'wc') {
         if (!opts.skipShipping) {
           await seedShipping(client, { negative: false });
           await seedShipping(client, { negative: true });
         }
-
         if (!opts.skipTax) {
           await seedTaxRates(client, { clean: true });
         }
+      }
+
+      if (platform === 'shopify' && !opts.skipContent) {
+        await seedContent(client, {
+          pages: parseInt(opts.pages),
+          blogPosts: parseInt(opts.blogPosts),
+        });
       }
 
       log.banner('ALL SEEDING COMPLETE');

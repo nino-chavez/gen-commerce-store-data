@@ -1,6 +1,6 @@
-# @signalx/seed-toolkit
+# @signalx/gen-commerce-store-data
 
-Multi-platform e-commerce test data seeder. Bulk-generates products, customers, orders, and coupons for **WooCommerce** and **BigCommerce** stores via their REST APIs. Includes store type presets (furniture, electronics, apparel) for vertical-specific test data.
+Multi-platform e-commerce test data seeder. Bulk-generates products, customers, orders, coupons, and content for **WooCommerce**, **BigCommerce**, and **Shopify** stores via their REST APIs. Includes store type presets (furniture, electronics, apparel) for vertical-specific test data.
 
 > **Important:** Only run this against **staging/dev stores**. It creates real data that is difficult to undo in bulk. Never run against a production store.
 
@@ -25,6 +25,24 @@ Multi-platform e-commerce test data seeder. Bulk-generates products, customers, 
 3. Create a V2/V3 API account with appropriate scopes (Products, Customers, Orders modify)
 4. Copy the **Store Hash** and **Access Token**
 
+### Shopify Credentials
+
+You have two options:
+
+**Option A — Custom App (recommended for staging stores):**
+1. In Shopify Admin, go to **Settings > Apps and sales channels > Develop apps**
+2. Create an app with these Admin API scopes:
+   - `write_products`, `read_products`
+   - `write_customers`, `read_customers`
+   - `write_orders`, `read_orders`
+   - `write_content`, `read_content`
+   - `write_price_rules`, `read_price_rules`
+   - `write_discounts`, `read_discounts`
+3. Install the app and copy the **Admin API access token** (`shpat_...`)
+
+**Option B — OAuth via `seed auth`:**
+Set `SHOPIFY_STORE_URL`, `SHOPIFY_CLIENT_ID`, and `SHOPIFY_CLIENT_SECRET` in `.env`, then run `node bin/seed auth`. A browser will open for authorization and the token will be written back to `.env`.
+
 ---
 
 ## Quickstart
@@ -40,7 +58,7 @@ cp .env.example .env
 Edit `.env` with your platform and credentials:
 
 ```env
-# Platform: wc or bc
+# Platform: wc, bc, or shopify
 PLATFORM=wc
 
 # WooCommerce
@@ -51,6 +69,10 @@ WC_CONSUMER_SECRET=cs_your_secret_here
 # BigCommerce
 BC_STORE_HASH=your_store_hash
 BC_ACCESS_TOKEN=your_access_token
+
+# Shopify
+SHOPIFY_STORE_URL=your-store.myshopify.com
+SHOPIFY_ACCESS_TOKEN=shpat_your_access_token
 ```
 
 ```bash
@@ -62,6 +84,9 @@ node bin/seed products 50 --preset=furniture
 
 # 5. Seed a BigCommerce store
 node bin/seed products 50 --platform=bc --preset=furniture
+
+# 6. Seed a Shopify store
+node bin/seed products 50 --platform=shopify --preset=apparel
 ```
 
 If you get `permission denied`:
@@ -77,7 +102,7 @@ These global flags apply to all commands:
 
 | Flag | Values | Default | Description |
 |------|--------|---------|-------------|
-| `--platform` / `-p` | `wc`, `bc` | `wc` | Target platform |
+| `--platform` / `-p` | `wc`, `bc`, `shopify` | `wc` | Target platform |
 | `--preset` | `furniture`, `electronics`, `apparel` | none | Store type preset for product generation |
 
 ```bash
@@ -86,6 +111,9 @@ node bin/seed products 50 --platform=wc --preset=furniture
 
 # BigCommerce with electronics preset
 node bin/seed products 30 --platform=bc --preset=electronics
+
+# Shopify with apparel preset
+node bin/seed products 30 --platform=shopify --preset=apparel
 ```
 
 ---
@@ -98,12 +126,14 @@ node bin/seed products 30 --platform=bc --preset=electronics
 node bin/seed all
 ```
 
-Creates 30 products, 15 customers, 10 coupons, 50 orders. On WooCommerce, also seeds shipping zones and tax rates. Customize:
+Creates 30 products, 15 customers, 10 coupons, 50 orders. On WooCommerce, also seeds shipping zones and tax rates. On Shopify, also seeds pages and blog posts. Customize:
 
 ```bash
 node bin/seed all --products=100 --customers=50 --orders=200 --coupons=20
-node bin/seed all --skip-shipping --skip-tax   # data only, no config seeding
+node bin/seed all --skip-shipping --skip-tax   # WC: data only, no config seeding
+node bin/seed all --skip-content               # Shopify: skip pages + blog posts
 node bin/seed all --platform=bc --preset=furniture
+node bin/seed all --platform=shopify --preset=apparel
 ```
 
 ### Individual commands
@@ -134,6 +164,12 @@ node bin/seed shipping --negative
 # Tax rates — WooCommerce only
 node bin/seed tax-rates
 node bin/seed tax-rates --clean
+
+# Content (pages + blog posts) — Shopify only
+node bin/seed content --pages=5 --blog-posts=10
+
+# Shopify OAuth bootstrap — writes SHOPIFY_ACCESS_TOKEN to .env
+node bin/seed auth
 ```
 
 ### Override credentials inline
@@ -144,23 +180,28 @@ node bin/seed products 10 --url=https://store.example.com --key=ck_xxx --secret=
 
 # BigCommerce
 node bin/seed products 10 --platform=bc --store-hash=abc123 --access-token=xxx
+
+# Shopify
+node bin/seed products 10 --platform=shopify --store-url=my-store.myshopify.com --access-token=shpat_xxx
 ```
 
 ---
 
 ## Command Reference
 
-| Command | Description | Key Options |
-|---------|-------------|-------------|
-| `products [n]` | Simple + variable products with realistic names, SKUs, pricing, stock | `--type=simple\|variable\|mixed` |
-| `customers [n]` | Customers with billing/shipping addresses | `--country=US\|CA\|GB\|AU\|DE\|FR\|...` |
-| `orders [n]` | Orders with 1-5 line items, weighted status distribution | `--status`, `--date-start`, `--date-end` |
-| `coupons [n]` | Fixed-amount and percentage discount coupons | `--discount-type`, `--min`, `--max` |
-| `shipping` | Seed shipping zones from fixtures (WC only) | `--negative` for edge-case zones |
-| `tax-rates` | Import tax rates from CSV fixture (WC only) | `--clean` to wipe existing rates first |
-| `all` | Run all commands in sequence | `--products=N`, `--customers=N`, `--orders=N`, `--coupons=N`, `--skip-shipping`, `--skip-tax` |
+| Command | Description | Platform | Key Options |
+|---------|-------------|----------|-------------|
+| `products [n]` | Simple + variable products with realistic names, SKUs, pricing, stock | all | `--type=simple\|variable\|mixed` |
+| `customers [n]` | Customers with billing/shipping addresses | all | `--country=US\|CA\|GB\|AU\|DE\|FR\|...` |
+| `orders [n]` | Orders with 1-5 line items, weighted status distribution | all | `--status`, `--date-start`, `--date-end` |
+| `coupons [n]` | Fixed-amount and percentage discount coupons | all | `--discount-type`, `--min`, `--max` |
+| `shipping` | Seed shipping zones from fixtures | WC only | `--negative` for edge-case zones |
+| `tax-rates` | Import tax rates from CSV fixture | WC only | `--clean` to wipe existing rates first |
+| `content` | Seed pages + blog posts | Shopify only | `--pages`, `--blog-posts` |
+| `auth` | OAuth flow → `SHOPIFY_ACCESS_TOKEN` written to `.env` | Shopify only | — |
+| `all` | Run all commands in sequence | all | `--products=N`, `--customers=N`, `--orders=N`, `--coupons=N`, `--skip-shipping`, `--skip-tax`, `--skip-content` |
 
-Default counts for `all`: 30 products, 15 customers, 10 coupons, 50 orders.
+Default counts for `all`: 30 products, 15 customers, 10 coupons, 50 orders, 5 pages, 10 blog posts.
 
 ---
 
@@ -207,13 +248,13 @@ Faker-generated products with:
 - Realistic names, emails, usernames
 - Full billing and shipping addresses
 - Country-specific address formatting when `--country` is set
-- On BigCommerce, addresses are created as a separate resource
+- On BigCommerce, addresses are created as a separate resource. On Shopify, addresses are inline on the customer create call.
 
 ### Orders
 
 - 1-5 products per order (sampled from existing store products)
 - Weighted status: 45% completed, 25% processing, 10% on-hold, 10% pending, 5% failed, 5% refunded
-- 20% chance of extra fee line
+- 20% chance of extra fee line (WC)
 - Custom date ranges for historical data
 
 ### Coupons
@@ -221,6 +262,12 @@ Faker-generated products with:
 - Random codes like `SAVE25`, `PROMO15`, `VIPFXQM`
 - Fixed-cart and percentage discounts
 - Random usage limits, minimum/maximum amounts, expiry dates
+- On Shopify, modeled as a `PriceRule` + `DiscountCode` pair
+
+### Content (Shopify only)
+
+- **Pages**: About Us, Shipping & Returns, Size Guide, Sustainability, etc. with generated body HTML
+- **Blog posts**: lorem-ipsum articles attached to a "News" blog (created if missing)
 
 ### Shipping Zones (WC only)
 
@@ -238,15 +285,17 @@ Two fixture sets:
 
 ## Platform Differences
 
-| Feature | WooCommerce | BigCommerce |
-|---------|------------|-------------|
-| Products | `regular_price` on product | `price` on product |
-| Variants | Separate POST per variation | Inline `variants[]` on create |
-| Categories | Auto-created by name | Must pre-create, use numeric IDs |
-| Customers | Inline billing/shipping | Separate `/customers/addresses` call |
-| Orders | v3 API with `line_items` | v2 API with `products[]` |
-| Coupons | `discount_type` field | `type` field with different values |
-| Shipping/Tax | Supported via fixtures | Not supported (platform-managed) |
+| Feature | WooCommerce | BigCommerce | Shopify |
+|---------|-------------|-------------|---------|
+| Products | `regular_price` on product | `price` on product | `variants[].price` inline |
+| Variants | Separate POST per variation | Inline `variants[]` on create | Inline `variants[]` on create |
+| Categories | Auto-created by name | Must pre-create, use numeric IDs | No real categories — uses `product_type` + `tags` |
+| Customers | Inline billing/shipping | Separate `/customers/addresses` call | Inline `addresses[]` |
+| Orders | v3 API with `line_items` | v2 API with `products[]` | v2024-10 with `line_items` (variant IDs) |
+| Coupons | `discount_type` field | `type` field with different values | `PriceRule` + `DiscountCode` pair |
+| Content (pages, blog) | — | — | `/pages.json`, `/blogs/{id}/articles.json` |
+| Shipping/Tax | Supported via fixtures | Not supported (platform-managed) | Not supported (platform-managed) |
+| Auth | Basic (consumer key/secret) | Static access token | Static access token, or OAuth via `seed auth` |
 
 ---
 
@@ -257,9 +306,11 @@ Two fixture sets:
 | `permission denied: bin/seed` | Run `chmod +x bin/seed` |
 | `Missing required WooCommerce config` | Create `.env` or pass `--url`, `--key`, `--secret` |
 | `Missing required BigCommerce config` | Create `.env` or pass `--store-hash`, `--access-token` |
+| `Missing required Shopify config` | Create `.env` or pass `--store-url`, `--access-token`, or run `seed auth` |
 | `401 Unauthorized` | Check credentials. WC needs Read/Write permissions. |
 | `No products found` | Run `products` before `orders` |
-| `Shipping/tax only supported for WooCommerce` | These commands don't apply to BigCommerce |
+| `Shipping/tax only supported for WooCommerce` | These commands don't apply to BC/Shopify |
+| `Content seeding only supported for Shopify` | Pages + blog posts is a Shopify-only feature |
 | Rate limit errors (429) | Auto-retries with backoff. If persistent, wait and retry. |
 
 ---
@@ -268,31 +319,35 @@ Two fixture sets:
 
 ```
 src/
-├── cli.mjs                  # Commander CLI — subcommands + global flags
-├── config.mjs               # .env + CLI flag config (WC + BC)
-├── logger.mjs               # Colored console output + progress bars
+├── cli.mjs                      # Commander CLI — subcommands + global flags
+├── config.mjs                   # .env + CLI flag config (WC + BC + Shopify)
+├── auth.mjs                     # Shopify OAuth flow (for `seed auth`)
+├── logger.mjs                   # Colored console output + progress bars
 ├── clients/
-│   ├── wc-client.mjs        # WooCommerce REST API client (retry + rate limiting)
-│   └── bc-client.mjs        # BigCommerce REST API client (v3 + v2, retry + rate limiting)
+│   ├── wc-client.mjs            # WooCommerce REST API client
+│   ├── bc-client.mjs            # BigCommerce REST API client (v3 + v2)
+│   └── shopify-client.mjs       # Shopify Admin REST API client
 ├── writers/
-│   ├── wc-writer.mjs        # Neutral shape → WooCommerce payload
-│   └── bc-writer.mjs        # Neutral shape → BigCommerce payload
+│   ├── wc-writer.mjs            # Neutral shape → WooCommerce payload
+│   ├── bc-writer.mjs            # Neutral shape → BigCommerce payload
+│   └── shopify-writer.mjs       # Neutral shape → Shopify payload
 ├── generators/
-│   ├── products.mjs         # Product generation (faker + preset support)
-│   ├── customers.mjs        # Customer generation (faker)
-│   ├── orders.mjs           # Order generation (faker + existing store data)
-│   ├── coupons.mjs          # Coupon generation (faker)
-│   ├── shipping.mjs         # Shipping zone seeder (WC fixtures)
-│   └── tax-rates.mjs        # Tax rate importer (WC CSV fixture)
+│   ├── products.mjs             # Product generation (faker + preset support)
+│   ├── customers.mjs            # Customer generation (faker)
+│   ├── orders.mjs               # Order generation (faker + existing store data)
+│   ├── coupons.mjs              # Coupon generation (faker)
+│   ├── shipping.mjs             # Shipping zone seeder (WC fixtures)
+│   ├── tax-rates.mjs            # Tax rate importer (WC CSV fixture)
+│   └── content.mjs              # Pages + blog posts seeder (Shopify)
 ├── presets/
-│   ├── index.mjs            # Preset loader
-│   ├── furniture.mjs        # Furniture vertical (Haven)
-│   ├── electronics.mjs      # Electronics vertical
-│   └── apparel.mjs          # Apparel vertical
+│   ├── index.mjs                # Preset loader
+│   ├── furniture.mjs            # Furniture vertical
+│   ├── electronics.mjs          # Electronics vertical
+│   └── apparel.mjs              # Apparel vertical
 └── fixtures/
     ├── shipping-zones.json
     ├── shipping-zones-negative.json
     └── tax-rates.csv
 ```
 
-Generators produce platform-neutral objects. Writers translate those objects into platform-specific API payloads and POST them. This keeps the data generation logic separate from the API integration.
+Generators produce platform-neutral objects. Writers translate those objects into platform-specific API payloads and POST them. This keeps the data generation logic separate from the API integration so adding new platforms is a matter of writing one client + one writer.
