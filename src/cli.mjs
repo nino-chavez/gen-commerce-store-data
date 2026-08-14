@@ -1,14 +1,13 @@
 import { program } from 'commander';
-import { loadConfig } from './config.mjs';
-import { WCClient } from './clients/wc-client.mjs';
-import { BCClient } from './clients/bc-client.mjs';
-import { ShopifyClient } from './clients/shopify-client.mjs';
-import { WCWriter } from './writers/wc-writer.mjs';
-import { BCWriter } from './writers/bc-writer.mjs';
-import { ShopifyWriter } from './writers/shopify-writer.mjs';
 import { createLogger } from './logger.mjs';
 import { loadPreset, listPresets } from './presets/index.mjs';
-import { seedProducts } from './generators/products.mjs';
+import { seedProductManifest, seedProducts } from './generators/products.mjs';
+import {
+  assertProductManifestApplyReady,
+  loadProductManifest,
+  serializeProductManifest,
+  writeProductManifest,
+} from './manifests/products.mjs';
 import { seedCustomers } from './generators/customers.mjs';
 import { seedOrders } from './generators/orders.mjs';
 import { seedCoupons } from './generators/coupons.mjs';
@@ -19,21 +18,34 @@ import { authenticate } from './auth.mjs';
 
 const log = createLogger('seed');
 
-function createWriter(opts) {
+async function createWriter(opts) {
+  const { loadConfig } = await import('./config.mjs');
   const config = loadConfig(opts);
 
   if (config.platform === 'bc') {
+    const [{ BCClient }, { BCWriter }] = await Promise.all([
+      import('./clients/bc-client.mjs'),
+      import('./writers/bc-writer.mjs'),
+    ]);
     const client = new BCClient(config);
     log.info(`Target: BigCommerce store ${config.storeHash}`);
     return { writer: new BCWriter(client), platform: 'bc', client };
   }
 
   if (config.platform === 'shopify') {
+    const [{ ShopifyClient }, { ShopifyWriter }] = await Promise.all([
+      import('./clients/shopify-client.mjs'),
+      import('./writers/shopify-writer.mjs'),
+    ]);
     const client = new ShopifyClient(config);
     log.info(`Target: Shopify store ${config.storeUrl}`);
     return { writer: new ShopifyWriter(client), platform: 'shopify', client };
   }
 
+  const [{ WCClient }, { WCWriter }] = await Promise.all([
+    import('./clients/wc-client.mjs'),
+    import('./writers/wc-writer.mjs'),
+  ]);
   const client = new WCClient(config);
   log.info(`Target: WooCommerce ${config.url}`);
   return { writer: new WCWriter(client), platform: 'wc', client };
@@ -41,7 +53,7 @@ function createWriter(opts) {
 
 async function withWriter(opts, fn) {
   try {
-    const { writer, platform, client } = createWriter(opts);
+    const { writer, platform, client } = await createWriter(opts);
     await fn(writer, platform, client);
   } catch (err) {
     log.error(err.message);
@@ -90,11 +102,44 @@ program
 // Products
 program
   .command('products')
-  .description('Generate products with faker data')
+  .description('Generate faker products or validate a deterministic product manifest')
   .argument('[amount]', 'Number of products to create', '20')
   .option('-t, --type <type>', 'Product type: simple, variable, mixed', 'mixed')
+  .option('--manifest <path>', 'Validate and preview a deterministic product manifest')
+  .option('--output <path>', 'Write a normalized manifest preview to a JSON file')
+  .option('--apply', 'Create merchant-approved manifest products in the configured store')
   .action(async (amount, opts, cmd) => {
     const globals = cmd.optsWithGlobals();
+
+    if (opts.manifest) {
+      try {
+        const manifest = await loadProductManifest(opts.manifest);
+
+        if (opts.apply) {
+          if (opts.output) throw new Error('--output cannot be used with --apply');
+          assertProductManifestApplyReady(manifest);
+          return withWriter(globals, (writer) => seedProductManifest(writer, manifest));
+        }
+
+        if (opts.output) {
+          await writeProductManifest(opts.output, manifest);
+        } else {
+          process.stdout.write(serializeProductManifest(manifest));
+        }
+        return;
+      } catch (error) {
+        log.error(error.message);
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    if (opts.output || opts.apply) {
+      log.error(`${opts.output ? '--output' : '--apply'} requires --manifest`);
+      process.exitCode = 1;
+      return;
+    }
+
     await withWriter(globals, (writer) => {
       const preset = loadPreset(globals.preset);
       return seedProducts(writer, parseInt(amount), { type: opts.type, preset });
@@ -244,4 +289,4 @@ program
     });
   });
 
-program.parse();
+await program.parseAsync();

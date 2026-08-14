@@ -96,6 +96,69 @@ chmod +x bin/seed
 
 ---
 
+## Review a source-backed product manifest
+
+A product manifest is a deterministic alternative to faker data. Previewing is the default: it validates the file and emits normalized JSON without loading store credentials or creating a platform client.
+
+```bash
+# Print a normalized preview to stdout. No credentials required.
+node bin/seed products --manifest ./catalog-candidates.json
+
+# Write the normalized preview to a file. No credentials required.
+node bin/seed products --manifest ./catalog-candidates.json --output ./catalog-preview.json
+```
+
+Every product carries its retailer source, retrieval date, source facts, and one of two readiness values:
+
+- `research-candidate` is review-only and can never be applied to a store.
+- `merchant-approved` is eligible for an explicit `--apply` only when stock, weight, and dimensions are complete.
+
+The manifest must use schema version `1.0`:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "catalogId": "review-catalog",
+  "currency": "USD",
+  "retrievedAt": "2026-08-14",
+  "products": [
+    {
+      "id": "source-backed-product",
+      "name": "Source-backed Product",
+      "brand": "Example Brand",
+      "sku": "REVIEW-001",
+      "price": "12.00",
+      "description": "Merchant-facing product description.",
+      "categories": ["Example Category"],
+      "tags": ["review"],
+      "readiness": "research-candidate",
+      "source": {
+        "retailer": "Example Retailer",
+        "url": "https://example.com/products/source-backed-product",
+        "retrievedAt": "2026-08-14",
+        "price": "12.00",
+        "facts": ["A fact supported by the linked product page."]
+      },
+      "metadata": {
+        "role": "example-role"
+      }
+    }
+  ]
+}
+```
+
+Applying is deliberately separate and keeps the existing platform flags:
+
+```bash
+# Fails if any row remains a research candidate or lacks commerce fields.
+node bin/seed products --manifest ./approved-catalog.json --apply \
+  --platform=bc --store-hash=abc123 --access-token=xxx
+```
+
+`--output` cannot be combined with `--apply`. Current platform writers create these as simple physical products. Source and metadata fields remain in the neutral manifest but are not yet persisted by the platform adapters.
+
+---
+
 ## Platform & Preset Flags
 
 These global flags apply to all commands:
@@ -144,6 +207,10 @@ node bin/seed products 50
 node bin/seed products 20 --type=variable
 node bin/seed products 30 --type=simple --preset=apparel
 
+# Products — validate/preview a deterministic manifest without credentials
+node bin/seed products --manifest=./catalog-candidates.json
+node bin/seed products --manifest=./catalog-candidates.json --output=./catalog-preview.json
+
 # Customers — optionally scoped to a country
 node bin/seed customers 25
 node bin/seed customers 10 --country=CA
@@ -191,7 +258,7 @@ node bin/seed products 10 --platform=shopify --store-url=my-store.myshopify.com 
 
 | Command | Description | Platform | Key Options |
 |---------|-------------|----------|-------------|
-| `products [n]` | Simple + variable products with realistic names, SKUs, pricing, stock | all | `--type=simple\|variable\|mixed` |
+| `products [n]` | Faker products or a deterministic manifest preview/apply | all | `--type`, `--manifest`, `--output`, `--apply` |
 | `customers [n]` | Customers with billing/shipping addresses | all | `--country=US\|CA\|GB\|AU\|DE\|FR\|...` |
 | `orders [n]` | Orders with 1-5 line items, weighted status distribution | all | `--status`, `--date-start`, `--date-end` |
 | `coupons [n]` | Fixed-amount and percentage discount coupons | all | `--discount-type`, `--min`, `--max` |

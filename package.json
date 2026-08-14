@@ -7,6 +7,7 @@
     "seed": "./bin/seed"
   },
   "scripts": {
+    "test": "node --test",
     "start": "node bin/seed",
     "auth": "node bin/seed auth",
     "seed:all": "node bin/seed all",
