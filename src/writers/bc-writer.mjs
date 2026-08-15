@@ -97,6 +97,119 @@ export class BCWriter {
     return this.client.post('catalog/products', payload);
   }
 
+  // --- Tiered pets corpus (multi-storefront) ---
+  //
+  // These methods are additive and do not touch writeSimpleProduct /
+  // writeVariableProduct above. They target BigCommerce's MSF (multi-
+  // storefront) model, verified against bigcommerce/api-specs
+  // reference/catalog/products_catalog.v3.yml before writing this:
+  //   - PUT /v3/catalog/products/channel-assignments  (bulk [{product_id, channel_id}])
+  //   - PUT /v3/catalog/products/category-assignments (bulk [{product_id, category_id}])
+  //   - custom_fields is an array of {name, value}, not a map
+  //   - POST /v3/catalog/products/{id}/images accepts multipart image_file
+  //     (raw upload) or JSON image_url (reusing an already-hosted URL)
+  // A product created here intentionally omits the plain `categories` field:
+  // BC's MSF guide states "a product must be explicitly assigned to a
+  // channel to be sold on that channel" -- category/channel visibility is
+  // handled entirely by the explicit assignment calls below, so a product
+  // with no assignment calls made against it is invisible everywhere,
+  // including the default channel.
+
+  /**
+   * Create a pets-corpus product (see src/generators/pet-catalog.mjs for the
+   * input shape). Simple products (no `variations`) map straight through;
+   * Food/Gear products with `variations` become BC's inline variants[].
+   * Does not assign any channel or category -- call assignChannels /
+   * assignCategories afterward.
+   */
+  async createPetProduct(product) {
+    const customFields = [
+      { name: 'provenance', value: product.metadata.provenance },
+      { name: 'tier', value: product.metadata.tier },
+      { name: 'species', value: product.species },
+    ];
+
+    const base = {
+      name: product.name,
+      type: 'physical',
+      sku: product.sku,
+      description: product.description,
+      is_visible: true,
+      tags: product.tags,
+      custom_fields: customFields,
+    };
+
+    if (Array.isArray(product.variations) && product.variations.length > 0) {
+      Object.assign(base, {
+        price: parseFloat(product.variations[0].price),
+        variants: product.variations.map((v) => ({
+          sku: v.sku,
+          price: parseFloat(v.price),
+          inventory_level: v.stockQuantity,
+          weight: v.weight,
+          option_values: v.attributes.map((a) => ({
+            option_display_name: a.name,
+            label: a.option,
+          })),
+        })),
+      });
+    } else {
+      Object.assign(base, {
+        price: parseFloat(product.price),
+        inventory_tracking: 'product',
+        inventory_level: product.stockQuantity,
+        weight: product.weight,
+        depth: product.dimensions.length,
+        width: product.dimensions.width,
+        height: product.dimensions.height,
+      });
+    }
+
+    return this.client.post('catalog/products', base);
+  }
+
+  /** Bulk PUT /v3/catalog/products/channel-assignments. assignments: [{productId, channelId}]. */
+  async assignChannels(assignments) {
+    const body = assignments.map((a) => ({ product_id: a.productId, channel_id: a.channelId }));
+    return this.client.put('catalog/products/channel-assignments', body);
+  }
+
+  /** Bulk PUT /v3/catalog/products/category-assignments. assignments: [{productId, categoryId}]. */
+  async assignCategories(assignments) {
+    const body = assignments.map((a) => ({ product_id: a.productId, category_id: a.categoryId }));
+    return this.client.put('catalog/products/category-assignments', body);
+  }
+
+  /** Multipart-upload a local image file to a product, returning the created image (with CDN URLs). */
+  async uploadProductImageFile(productId, filePath, { isThumbnail = true, description } = {}) {
+    const { readFile } = await import('node:fs/promises');
+    const { basename } = await import('node:path');
+    const buffer = await readFile(filePath);
+    const formData = new FormData();
+    formData.append('product_id', String(productId));
+    formData.append('is_thumbnail', String(isThumbnail));
+    if (description) formData.append('description', description);
+    formData.append('image_file', new Blob([buffer]), basename(filePath));
+    return this.client.postMultipart(`catalog/products/${productId}/images`, formData);
+  }
+
+  /** Attach an already-hosted image URL (e.g. a CDN URL from a prior upload) to a product. */
+  async attachProductImageUrl(productId, imageUrl, { isThumbnail = true, description } = {}) {
+    const payload = { image_url: imageUrl, is_thumbnail: isThumbnail };
+    if (description) payload.description = description;
+    return this.client.post(`catalog/products/${productId}/images`, payload);
+  }
+
+  /** Paginate the full catalog once and return Map(sku -> productId), for idempotent bulk runs. */
+  async fetchSkuIndex() {
+    const products = await this.client.getAll('catalog/products', { include_fields: 'sku' });
+    const index = new Map();
+    for (const p of products) {
+      if (p.sku) index.set(p.sku, p.id);
+    }
+    return index;
+  }
+
   // --- Customers ---
 
   async writeCustomer(customer) {

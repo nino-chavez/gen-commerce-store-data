@@ -1,13 +1,15 @@
 import Bottleneck from 'bottleneck';
 
 const REQUEST_TIMEOUT = 30_000;
-const RETRY_ATTEMPTS = 3;
+const RETRY_ATTEMPTS = 6;
 const RETRY_BASE_DELAY = 1000;
+const MAX_RATE_LIMIT_WAIT = 60_000;
 
 class RetriableError extends Error {
-  constructor(message) {
+  constructor(message, { rateLimitResetMs } = {}) {
     super(message);
     this.name = 'RetriableError';
+    this.rateLimitResetMs = rateLimitResetMs;
   }
 }
 
@@ -68,7 +70,12 @@ export class BCClient {
           if (response.status >= 400 && response.status < 500 && response.status !== 429) {
             throw new Error(msg);
           }
-          throw new RetriableError(msg);
+
+          // BC documents X-Rate-Limit-Time-Reset-Ms as the authoritative wait
+          // time on 429s: https://docs.bigcommerce.com/developer/docs/overview/api-fundamentals/rate-limits.md
+          const resetHeader = response.headers.get('X-Rate-Limit-Time-Reset-Ms');
+          const rateLimitResetMs = resetHeader !== null ? Number(resetHeader) : undefined;
+          throw new RetriableError(msg, { rateLimitResetMs });
         }
 
         // v2 returns data directly, v3 wraps in { data }
@@ -85,7 +92,13 @@ export class BCClient {
           throw error;
         }
 
-        const delay = RETRY_BASE_DELAY * Math.pow(2, attempt - 1) * (0.5 + Math.random() * 0.5);
+        const backoff = RETRY_BASE_DELAY * Math.pow(2, attempt - 1) * (0.5 + Math.random() * 0.5);
+        // Prefer BC's own reset window over our exponential guess when it's given
+        // and sane; a server-reported wait is more accurate than a blind backoff.
+        const rateLimitWait = Number.isFinite(error.rateLimitResetMs) && error.rateLimitResetMs > 0
+          ? Math.min(error.rateLimitResetMs, MAX_RATE_LIMIT_WAIT)
+          : undefined;
+        const delay = rateLimitWait !== undefined ? Math.max(rateLimitWait, backoff) : backoff;
         await new Promise((r) => setTimeout(r, delay));
       }
     }
@@ -107,6 +120,69 @@ export class BCClient {
 
   async del(endpoint, opts) {
     return this.request('DELETE', endpoint, null, opts);
+  }
+
+  /**
+   * POST multipart/form-data (e.g. raw file upload to the product images
+   * endpoint). Bypasses the JSON request() path -- BC's image upload only
+   * accepts image_url over JSON; a local file requires multipart/form-data
+   * with an `image_file` field. Reuses the same rate limiter and retry logic.
+   */
+  async postMultipart(endpoint, formData) {
+    return this.limiter.schedule(() => this._multipartWithRetry(endpoint, formData));
+  }
+
+  async _multipartWithRetry(endpoint, formData) {
+    const url = `${this.baseUrlV3}/${endpoint}`;
+
+    for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'X-Auth-Token': this.accessToken,
+            Accept: 'application/json',
+          },
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorBody = await response.text();
+          const msg = `POST ${endpoint} (multipart) -> ${response.status}: ${errorBody}`;
+          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+            throw new Error(msg);
+          }
+          const resetHeader = response.headers.get('X-Rate-Limit-Time-Reset-Ms');
+          const rateLimitResetMs = resetHeader !== null ? Number(resetHeader) : undefined;
+          throw new RetriableError(msg, { rateLimitResetMs });
+        }
+
+        const json = await response.json();
+        return json.data ?? json;
+      } catch (error) {
+        clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+          error = new RetriableError(`Timeout after ${REQUEST_TIMEOUT}ms: POST ${endpoint} (multipart)`);
+        }
+
+        if (attempt === RETRY_ATTEMPTS || !(error instanceof RetriableError)) {
+          throw error;
+        }
+
+        const backoff = RETRY_BASE_DELAY * Math.pow(2, attempt - 1) * (0.5 + Math.random() * 0.5);
+        const rateLimitWait = Number.isFinite(error.rateLimitResetMs) && error.rateLimitResetMs > 0
+          ? Math.min(error.rateLimitResetMs, MAX_RATE_LIMIT_WAIT)
+          : undefined;
+        const delay = rateLimitWait !== undefined ? Math.max(rateLimitWait, backoff) : backoff;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
 
   async testConnection() {
