@@ -74,6 +74,34 @@ test('createPetProduct: variable product (Food/Gear) maps variations to BC inlin
   assert.equal('price' in body && 'depth' in body, false, 'simple-product-only fields must not leak onto a variable product');
 });
 
+test('createPetProduct: inline imageUrl avoids a second image POST', async () => {
+  const corpus = generatePetCatalog({ enterpriseCount: 50, mediumCount: 20 });
+  const simple = corpus.find((p) => !p.variations);
+  const client = mockClient();
+  const writer = new BCWriter(client);
+
+  await writer.createPetProduct(simple, { imageUrl: 'https://cdn.example.com/brand.png' });
+
+  assert.equal(client.calls.length, 1, 'no separate image call when imageUrl is provided at create time');
+  const { body } = client.calls[0];
+  assert.deepEqual(body.images, [{
+    image_url: 'https://cdn.example.com/brand.png',
+    is_thumbnail: true,
+    description: `${simple.brand} packshot`,
+  }]);
+});
+
+test('createPetProduct: no imageUrl means no images field at all', async () => {
+  const corpus = generatePetCatalog({ enterpriseCount: 50, mediumCount: 20 });
+  const simple = corpus.find((p) => !p.variations);
+  const client = mockClient();
+  const writer = new BCWriter(client);
+
+  await writer.createPetProduct(simple);
+
+  assert.equal('images' in client.calls[0].body, false);
+});
+
 test('assignChannels: bulk PUT with product_id/channel_id keys', async () => {
   const client = mockClient();
   const writer = new BCWriter(client);

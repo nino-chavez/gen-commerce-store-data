@@ -122,7 +122,7 @@ export class BCWriter {
    * Does not assign any channel or category -- call assignChannels /
    * assignCategories afterward.
    */
-  async createPetProduct(product) {
+  async createPetProduct(product, { imageUrl } = {}) {
     const customFields = [
       { name: 'provenance', value: product.metadata.provenance },
       { name: 'tier', value: product.metadata.tier },
@@ -138,6 +138,12 @@ export class BCWriter {
       tags: product.tags,
       custom_fields: customFields,
     };
+
+    if (imageUrl) {
+      // Inline at create time -- avoids a second POST per product when
+      // reusing an already-uploaded brand packshot's CDN URL.
+      base.images = [{ image_url: imageUrl, is_thumbnail: true, description: `${product.brand} packshot` }];
+    }
 
     if (Array.isArray(product.variations) && product.variations.length > 0) {
       Object.assign(base, {
