@@ -98,3 +98,21 @@ export function buildDryRunExport({
 export function serializeCatalogExport(exportObject) {
   return `${JSON.stringify(exportObject, null, 2)}\n`;
 }
+
+/**
+ * Merge one or more BC category-tree handoff arrays (each item shaped
+ * { id, path, ... }, `path` being " > "-joined) into a single
+ * Map(path -> id). Later arrays win on a path collision. Used to layer a
+ * tree addendum (e.g. a species branch added to an existing tree after the
+ * fact) over the tree's original export without either side needing to
+ * know about the other's origin.
+ */
+export function mergeCategoryPathMaps(...rowArrays) {
+  const map = new Map();
+  for (const rows of rowArrays) {
+    for (const row of rows || []) {
+      if (row?.path && row?.id !== undefined) map.set(row.path, row.id);
+    }
+  }
+  return map;
+}

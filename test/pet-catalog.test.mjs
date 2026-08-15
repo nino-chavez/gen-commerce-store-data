@@ -6,6 +6,7 @@ import {
   assertNoRealBrandCollisions,
   buildDryRunExport,
   filterByTier,
+  mergeCategoryPathMaps,
   serializeCatalogExport,
   summarizeCatalog,
 } from '../src/manifests/pet-catalog-export.mjs';
@@ -155,6 +156,37 @@ test('SKUs are unique across the full enterprise corpus', () => {
   const corpus = generatePetCatalog();
   const skus = new Set(corpus.map((p) => p.sku));
   assert.equal(skus.size, corpus.length);
+});
+
+test('mergeCategoryPathMaps: layers a tree addendum over the base export by path', () => {
+  const base = [
+    { id: 388, path: 'Dogs > Food' },
+    { id: 389, path: 'Dogs > Treats' },
+  ];
+  const addendum = [
+    { id: 414, path: 'Fish & Aquatics > Food' },
+    { id: 415, path: 'Fish & Aquatics > Treats' },
+  ];
+
+  const merged = mergeCategoryPathMaps(base, addendum);
+
+  assert.equal(merged.size, 4);
+  assert.equal(merged.get('Dogs > Food'), 388);
+  assert.equal(merged.get('Fish & Aquatics > Food'), 414);
+});
+
+test('mergeCategoryPathMaps: a later array overrides an earlier one on path collision', () => {
+  const base = [{ id: 1, path: 'Dogs > Food' }];
+  const patch = [{ id: 999, path: 'Dogs > Food' }];
+
+  const merged = mergeCategoryPathMaps(base, patch);
+
+  assert.equal(merged.get('Dogs > Food'), 999);
+});
+
+test('mergeCategoryPathMaps: tolerates missing/empty inputs', () => {
+  assert.equal(mergeCategoryPathMaps().size, 0);
+  assert.equal(mergeCategoryPathMaps(undefined, [{ id: 1, path: 'X' }], null).size, 1);
 });
 
 test('serializeCatalogExport round-trips through JSON with a trailing newline', () => {
