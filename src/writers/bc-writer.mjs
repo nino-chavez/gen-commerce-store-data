@@ -148,6 +148,8 @@ export class BCWriter {
     if (Array.isArray(product.variations) && product.variations.length > 0) {
       Object.assign(base, {
         price: parseFloat(product.variations[0].price),
+        // BC requires a base weight even when every variant carries its own.
+        weight: product.variations[0].weight ?? 1,
         variants: product.variations.map((v) => ({
           sku: v.sku,
           price: parseFloat(v.price),

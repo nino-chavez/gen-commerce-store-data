@@ -78,8 +78,11 @@ export class BCClient {
           throw new RetriableError(msg, { rateLimitResetMs });
         }
 
-        // v2 returns data directly, v3 wraps in { data }
-        const json = await response.json();
+        // v2 returns data directly, v3 wraps in { data }. Bulk assignment
+        // PUTs (and some DELETEs) return 204 with an empty body.
+        const text = await response.text();
+        if (!text) return null;
+        const json = JSON.parse(text);
         return version === 'v2' ? json : (json.data ?? json);
       } catch (error) {
         clearTimeout(timeoutId);
