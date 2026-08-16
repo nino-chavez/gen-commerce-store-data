@@ -89,6 +89,10 @@ export class BCClient {
 
         if (error.name === 'AbortError') {
           error = new RetriableError(`Timeout after ${REQUEST_TIMEOUT}ms: ${method} ${endpoint}`);
+        } else if (error.name === 'TypeError' && error.cause) {
+          // Transport-level failure (DNS, connection reset) — undici surfaces
+          // these as a bare TypeError, which would otherwise abort a long run.
+          error = new RetriableError(`Network error: ${method} ${endpoint}: ${error.cause.code ?? error.cause.message}`);
         }
 
         if (attempt === RETRY_ATTEMPTS || !(error instanceof RetriableError)) {
@@ -172,6 +176,8 @@ export class BCClient {
 
         if (error.name === 'AbortError') {
           error = new RetriableError(`Timeout after ${REQUEST_TIMEOUT}ms: POST ${endpoint} (multipart)`);
+        } else if (error.name === 'TypeError' && error.cause) {
+          error = new RetriableError(`Network error: POST ${endpoint} (multipart): ${error.cause.code ?? error.cause.message}`);
         }
 
         if (attempt === RETRY_ATTEMPTS || !(error instanceof RetriableError)) {
