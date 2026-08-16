@@ -96,6 +96,69 @@ chmod +x bin/seed
 
 ---
 
+## Review a source-backed product manifest
+
+A product manifest is a deterministic alternative to faker data. Previewing is the default: it validates the file and emits normalized JSON without loading store credentials or creating a platform client.
+
+```bash
+# Print a normalized preview to stdout. No credentials required.
+node bin/seed products --manifest ./catalog-candidates.json
+
+# Write the normalized preview to a file. No credentials required.
+node bin/seed products --manifest ./catalog-candidates.json --output ./catalog-preview.json
+```
+
+Every product carries its retailer source, retrieval date, source facts, and one of two readiness values:
+
+- `research-candidate` is review-only and can never be applied to a store.
+- `merchant-approved` is eligible for an explicit `--apply` only when stock, weight, and dimensions are complete.
+
+The manifest must use schema version `1.0`:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "catalogId": "review-catalog",
+  "currency": "USD",
+  "retrievedAt": "2026-08-14",
+  "products": [
+    {
+      "id": "source-backed-product",
+      "name": "Source-backed Product",
+      "brand": "Example Brand",
+      "sku": "REVIEW-001",
+      "price": "12.00",
+      "description": "Merchant-facing product description.",
+      "categories": ["Example Category"],
+      "tags": ["review"],
+      "readiness": "research-candidate",
+      "source": {
+        "retailer": "Example Retailer",
+        "url": "https://example.com/products/source-backed-product",
+        "retrievedAt": "2026-08-14",
+        "price": "12.00",
+        "facts": ["A fact supported by the linked product page."]
+      },
+      "metadata": {
+        "role": "example-role"
+      }
+    }
+  ]
+}
+```
+
+Applying is deliberately separate and keeps the existing platform flags:
+
+```bash
+# Fails if any row remains a research candidate or lacks commerce fields.
+node bin/seed products --manifest ./approved-catalog.json --apply \
+  --platform=bc --store-hash=abc123 --access-token=xxx
+```
+
+`--output` cannot be combined with `--apply`. Current platform writers create these as simple physical products. Source and metadata fields remain in the neutral manifest but are not yet persisted by the platform adapters.
+
+---
+
 ## Platform & Preset Flags
 
 These global flags apply to all commands:
@@ -103,7 +166,7 @@ These global flags apply to all commands:
 | Flag | Values | Default | Description |
 |------|--------|---------|-------------|
 | `--platform` / `-p` | `wc`, `bc`, `shopify` | `wc` | Target platform |
-| `--preset` | `furniture`, `electronics`, `apparel` | none | Store type preset for product generation |
+| `--preset` | `furniture`, `electronics`, `apparel`, `pets` | none | Store type preset for product generation |
 
 ```bash
 # WooCommerce with furniture preset
@@ -143,6 +206,14 @@ node bin/seed all --platform=shopify --preset=apparel
 node bin/seed products 50
 node bin/seed products 20 --type=variable
 node bin/seed products 30 --type=simple --preset=apparel
+
+# Products — validate/preview a deterministic manifest without credentials
+node bin/seed products --manifest=./catalog-candidates.json
+node bin/seed products --manifest=./catalog-candidates.json --output=./catalog-preview.json
+
+# Products — pets preset tiered dry-run export (no credentials, no store writes)
+node bin/seed products --preset=pets --dry-run --tier=medium --output=./pets-medium.json
+node bin/seed products --preset=pets --dry-run --tier=enterprise --output=./pets-enterprise.json
 
 # Customers — optionally scoped to a country
 node bin/seed customers 25
@@ -191,7 +262,7 @@ node bin/seed products 10 --platform=shopify --store-url=my-store.myshopify.com 
 
 | Command | Description | Platform | Key Options |
 |---------|-------------|----------|-------------|
-| `products [n]` | Simple + variable products with realistic names, SKUs, pricing, stock | all | `--type=simple\|variable\|mixed` |
+| `products [n]` | Faker products, a deterministic manifest preview/apply, or a `pets` tiered dry-run export | all | `--type`, `--manifest`, `--output`, `--apply`, `--dry-run`, `--tier`, `--seed` |
 | `customers [n]` | Customers with billing/shipping addresses | all | `--country=US\|CA\|GB\|AU\|DE\|FR\|...` |
 | `orders [n]` | Orders with 1-5 line items, weighted status distribution | all | `--status`, `--date-start`, `--date-end` |
 | `coupons [n]` | Fixed-amount and percentage discount coupons | all | `--discount-type`, `--min`, `--max` |
@@ -229,6 +300,69 @@ Categories: Men, Women, Kids, Shoes, Accessories, Activewear
 Attributes: Size (XS-XXL), Color (Black, Navy, Olive...)
 Price range: $10 - $400
 Names: "Relaxed-Fit Hoodie", "Tailored Oxford Shoes"
+
+### `pets`
+
+Three-level taxonomy: 6 species (Dogs, Cats, Birds, Reptiles, Small Pets,
+Fish & Aquatics) x 5 departments (Food, Treats, Toys & Enrichment,
+Health & Care, Gear & Habitat) x 3-5 subcategories each (107 leaf category
+paths total, e.g. `Dogs > Food > Dry Food`).
+
+36 invented brands (6 per species, split value/mid/premium). None collide
+with real pet brands — checked in `test/pet-catalog.test.mjs` against a
+denylist of ~30 real brands. Food products get Size x Flavor variants. Gear
+& Habitat products get Size x Color variants. Everything else is a
+single-variant simple product.
+
+Works with the generic single-item path like the other presets
+(`node bin/seed products 50 --preset=pets`). Also supports a **tiered bulk
+dry-run export** — see below.
+
+#### Tiered dry-run export (no store writes)
+
+`pets` is the only preset with a deterministic bulk-corpus generator. It
+seeds a "medium" demo catalog (~700 products) and an "enterprise" one
+(~3,200 products, which *includes* the medium 700). Generation is seeded
+(`faker.seed(...)`, default seed `630071`), so the same seed always produces
+byte-identical output. No `Date.now()` or unseeded randomness appears
+anywhere in the corpus.
+
+```bash
+# Preview only: prints a summary (counts, category coverage, brand
+# distribution) to stdout. No file written, no store credentials needed.
+node bin/seed products --preset=pets --dry-run --tier=medium
+
+# Write the full corpus to a JSON file for review.
+node bin/seed products --preset=pets --dry-run --tier=medium --output=./pets-medium.json
+node bin/seed products --preset=pets --dry-run --tier=enterprise --output=./pets-enterprise.json
+
+# Override the seed (rarely needed -- breaks the default determinism guarantee).
+node bin/seed products --preset=pets --dry-run --tier=medium --seed=42 --output=./pets-medium-alt.json
+```
+
+`--tier` defaults to `enterprise` (the full corpus) when omitted. `medium`
+is always the same ordered prefix of `enterprise`, so a medium-tier demo
+store is a strict subset of the enterprise-tier one.
+
+Every product carries honesty labels a downstream writer can map to platform
+custom fields: tag `synthetic-demo`, plus `metadata: { provenance:
+"synthetic", tier: "medium" | "enterprise" }`.
+
+**This does not reuse the `--manifest` evidence-manifest schema above.** That
+schema (`src/manifests/products.mjs`) requires a real, HTTPS-sourced
+`source.url` and `facts` per product. It's built for curating real,
+research-backed products, not a synthetic bulk corpus, and it silently drops
+any field outside its whitelist — `variations`, `tier`, and `categoryPath`
+included.
+
+The `pets` dry-run export is a sibling module instead
+(`src/generators/pet-catalog.mjs` + `src/manifests/pet-catalog-export.mjs`),
+with its own JSON shape: `{ schemaVersion, preset, tier, seed, summary,
+products }`. Each product carries `sku`, `name`, `brand`,
+`brandPositioning`, `species`, `categoryPath` (3-element array), `categories`
+(joined path string), `tags`, `tier`, and `metadata`. Simple products add
+`price`/`stockQuantity`/`weight`/`dimensions`; Food and Gear & Habitat
+products add `attributes`/`variations` instead.
 
 ---
 
@@ -333,6 +467,7 @@ src/
 │   └── shopify-writer.mjs       # Neutral shape → Shopify payload
 ├── generators/
 │   ├── products.mjs             # Product generation (faker + preset support)
+│   ├── pet-catalog.mjs          # Deterministic tiered pets corpus (dry-run only)
 │   ├── customers.mjs            # Customer generation (faker)
 │   ├── orders.mjs               # Order generation (faker + existing store data)
 │   ├── coupons.mjs              # Coupon generation (faker)
@@ -343,7 +478,12 @@ src/
 │   ├── index.mjs                # Preset loader
 │   ├── furniture.mjs            # Furniture vertical
 │   ├── electronics.mjs          # Electronics vertical
-│   └── apparel.mjs              # Apparel vertical
+│   ├── apparel.mjs              # Apparel vertical
+│   ├── pets.mjs                 # Pets vertical (generic path + dry-run export)
+│   └── pets-data.mjs            # Pets taxonomy, brands, pricing (shared data)
+├── manifests/
+│   ├── products.mjs             # Evidence-manifest schema (source-backed products)
+│   └── pet-catalog-export.mjs   # Tiered dry-run export (filter/summarize/serialize)
 └── fixtures/
     ├── shipping-zones.json
     ├── shipping-zones-negative.json

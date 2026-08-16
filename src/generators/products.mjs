@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { createLogger } from '../logger.mjs';
+import { assertProductManifestApplyReady } from '../manifests/products.mjs';
 
 const log = createLogger('products');
 
@@ -140,6 +141,35 @@ export async function seedProducts(writer, amount = 20, opts = {}) {
     }
 
     log.progress(i + 1, amount, 'products');
+  }
+
+  log.info(`\nDone: ${results.created} created, ${results.failed} failed`);
+  return results;
+}
+
+/**
+ * Apply validated, merchant-approved manifest products through an existing writer.
+ * Research candidates are rejected before the writer receives any product.
+ */
+export async function seedProductManifest(writer, manifest) {
+  const normalized = assertProductManifestApplyReady(manifest);
+  log.banner(`Seeding ${normalized.products.length} merchant-approved manifest product(s)`);
+
+  const results = { created: 0, failed: 0, ids: [] };
+
+  for (let index = 0; index < normalized.products.length; index++) {
+    const product = normalized.products[index];
+    try {
+      const created = await writer.writeSimpleProduct(product);
+      results.created++;
+      if (created?.id !== undefined) results.ids.push(created.id);
+      log.success(`${product.name} @ ${normalized.currency} ${product.price}${created?.id !== undefined ? ` [id: ${created.id}]` : ''}`);
+    } catch (error) {
+      results.failed++;
+      log.error(`Manifest product ${product.id}: ${error.message}`);
+    }
+
+    log.progress(index + 1, normalized.products.length, 'products');
   }
 
   log.info(`\nDone: ${results.created} created, ${results.failed} failed`);
