@@ -106,8 +106,11 @@ program
   .argument('[amount]', 'Number of products to create', '20')
   .option('-t, --type <type>', 'Product type: simple, variable, mixed', 'mixed')
   .option('--manifest <path>', 'Validate and preview a deterministic product manifest')
-  .option('--output <path>', 'Write a normalized manifest preview to a JSON file')
+  .option('--output <path>', 'Write a normalized manifest preview, or --dry-run export, to a JSON file')
   .option('--apply', 'Create merchant-approved manifest products in the configured store')
+  .option('--dry-run', 'Generate a preset\'s full corpus and export it as reviewable JSON (no store writes). Only presets with tiered bulk generation support this (e.g. pets).')
+  .option('--tier <tier>', 'Filter a --dry-run export by tier: medium or enterprise (default: enterprise, the full corpus)')
+  .option('--seed <n>', 'Override the deterministic seed used by --dry-run generation')
   .action(async (amount, opts, cmd) => {
     const globals = cmd.optsWithGlobals();
 
@@ -134,8 +137,44 @@ program
       }
     }
 
+    if (opts.dryRun) {
+      if (opts.apply) {
+        log.error('--dry-run cannot be combined with --apply (dry runs never write to a store)');
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const preset = loadPreset(globals.preset);
+        if (!preset?.buildDryRunExport) {
+          throw new Error(`Preset "${globals.preset || '(none)'}" does not support --dry-run. Try --preset=pets.`);
+        }
+        if (opts.tier && opts.tier !== 'medium' && opts.tier !== 'enterprise') {
+          throw new Error(`--tier must be "medium" or "enterprise" (got "${opts.tier}")`);
+        }
+
+        const result = preset.buildDryRunExport({
+          tier: opts.tier,
+          seed: opts.seed !== undefined ? parseInt(opts.seed, 10) : undefined,
+        });
+
+        if (opts.output) {
+          const { writeFile } = await import('node:fs/promises');
+          await writeFile(opts.output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+          log.info(`Wrote ${result.products.length} product(s) to ${opts.output}`);
+        }
+
+        log.banner(`Dry run: preset=${result.preset} tier=${result.tier} seed=${result.seed}`);
+        log.info(JSON.stringify(result.summary, null, 2));
+      } catch (error) {
+        log.error(error.message);
+        process.exitCode = 1;
+      }
+      return;
+    }
+
     if (opts.output || opts.apply) {
-      log.error(`${opts.output ? '--output' : '--apply'} requires --manifest`);
+      log.error(`${opts.output ? '--output' : '--apply'} requires --manifest or --dry-run`);
       process.exitCode = 1;
       return;
     }

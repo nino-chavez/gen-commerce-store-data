@@ -1,8 +1,9 @@
 import furniture from './furniture.mjs';
 import electronics from './electronics.mjs';
 import apparel from './apparel.mjs';
+import pets from './pets.mjs';
 
-const presets = { furniture, electronics, apparel };
+const presets = { furniture, electronics, apparel, pets };
 
 export function loadPreset(name) {
   if (!name) return null;
